@@ -7034,8 +7034,8 @@ static void create_plot(OscPlot *plot)
 	 g_object_bind_property_full(priv->plot_domain, "active", priv->plot_type, "visible",
 		0, domain_is_time, NULL, NULL, NULL);
 
-	gtk_spin_button_set_value(GTK_SPIN_BUTTON(priv->sample_count_widget), 400);
-	priv->sample_count = 400;
+	gtk_spin_button_set_value(GTK_SPIN_BUTTON(priv->sample_count_widget), 524800);
+	priv->sample_count = 524800;
 	g_signal_connect(priv->sample_count_widget, "value-changed", G_CALLBACK(count_changed_cb), plot);
 
 	gtk_combo_box_set_active(GTK_COMBO_BOX(priv->fft_size_widget), 2);
