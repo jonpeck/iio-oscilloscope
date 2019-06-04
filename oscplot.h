@@ -74,6 +74,9 @@ void          osc_plot_spect_set_start_f(OscPlot *plot, double freq_mhz);
 void          osc_plot_spect_set_len    (OscPlot *plot, unsigned fft_count);
 void          osc_plot_spect_set_filter_bw(OscPlot *plot, double bw);
 
+int SaveMatFile(struct iio_context *ctx, gchar *fileName, gchar *deviceName, int *saveChannelMask, int normalizeData);
+
+
 G_END_DECLS
 
 #endif /* __OSC_PLOT__ */

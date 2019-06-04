@@ -4348,20 +4348,16 @@ static void save_as(OscPlot *plot, const char *filename, int type)
 	OscPlotPrivate *priv = plot->priv;
 	struct iio_context *ctx = priv->ctx;
 	FILE *fp;
-	mat_t *mat;
-	matvar_t *matvar;
 	struct iio_device *dev;
 	struct extra_dev_info *dev_info;
-	char tmp[100];
-	mat_dim dims[2] = {-1, 1};
 	double freq;
 	char *name;
 	gchar *active_device;
 	int *save_channels_mask;
 	int d;
 	unsigned int nb_channels, i, j;
-	const char *dev_name;
 	unsigned int dev_sample_count;
+	int scale_mat_data;
 
 	name = malloc(strlen(filename) + 5);
 	switch(type) {
@@ -4487,75 +4483,27 @@ static void save_as(OscPlot *plot, const char *filename, int type)
 				else
 					sprintf(name, "%s.mat", filename);
 
-			mat = Mat_Create(name, NULL);
-			if (!mat) {
-				fprintf(stderr, "Error creating MAT file %s: %s\n", name, strerror(errno));
-				break;
-			}
-
 			active_device = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(priv->device_combobox));
+			
+			scale_mat_data = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(priv->save_mat_scale));
 			d = device_find_by_name(ctx, active_device);
-			g_free(active_device);
 			if (d < 0)
 				break;
 
 			dev = iio_context_get_device(ctx, d);
 			dev_info = iio_device_get_data(dev);
 			nb_channels = iio_device_get_channels_count(dev);
-			dev_name = iio_device_get_name(dev) ?:
-				iio_device_get_id(dev);
-
-			/* Find which channel need to be saved */
 			save_channels_mask = get_user_saveas_channel_selection(plot, nb_channels);
-
-			dev_sample_count = dev_info->sample_count;
-			if (dev_info->channel_trigger_enabled)
-				dev_sample_count /= 2;
-
-			dims[0] = dev_sample_count;
-			for (i = 0; i < nb_channels; i++) {
-				struct iio_channel *chn = iio_device_get_channel(dev, i);
-				const char *ch_name = iio_channel_get_name(chn) ?:
-					iio_channel_get_id(chn);
-				struct extra_info *info = iio_channel_get_data(chn);
-				if (save_channels_mask[i] == 1)
-					continue;
-				sprintf(tmp, "%s_%s", dev_name, ch_name);
-				g_strdelimit(tmp, "-", '_');
-				if (!gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(priv->save_mat_scale))) {
-						matvar = Mat_VarCreate(tmp, MAT_C_SINGLE, MAT_T_SINGLE, 2, dims,
-					info->data_ref, 0);
-				} else {
-					const struct iio_data_format* format = iio_channel_get_data_format(chn);
-					gdouble *tmp_data;
-					double k;
-
-					tmp_data = g_new(gdouble, dev_sample_count);
-					if (format->is_signed)
-						k = format->bits - 1;
-					else
-						k = format->bits;
-					for (j = 0; j < dev_sample_count; j++) {
-						tmp_data[j] = (gdouble)info->data_ref[j] /
-									(pow(2.0, k));
-					}
-					matvar = Mat_VarCreate(tmp, MAT_C_DOUBLE, MAT_T_DOUBLE,
-							2, dims, tmp_data, 0);
-					g_free(tmp_data);
-				}
-
-				if (!matvar)
-					fprintf(stderr,
-						"error creating matvar on channel %s\n",
-						tmp);
-				else {
-					Mat_VarWrite(mat, matvar, 0);
-					Mat_VarFree(matvar);
-				}
-			}
+			
+			printf("MATLAB: Creating ");
+			g_print("%s",name);
+			printf(" using device: ");
+			g_print("%s",active_device);
+			printf("\n");
+			
+			d = SaveMatFile(ctx,name,active_device,save_channels_mask,scale_mat_data);
 			free(save_channels_mask);
-
-			Mat_Close(mat);
+			
 			break;
 
 		default:
@@ -4567,6 +4515,85 @@ static void save_as(OscPlot *plot, const char *filename, int type)
 
 	priv->saveas_filename = g_strdup(name);
 	free(name);
+}
+
+int SaveMatFile(struct iio_context *ctx, gchar *fileName, gchar *deviceName, int *saveChannelMask, int normalizeData)
+{
+	struct iio_device *dev;
+	struct extra_dev_info *dev_info;
+	char tmp[100];
+	mat_dim dims[2] = {-1, 1};
+	int d;
+	unsigned int nb_channels, i, j;
+	const char *dev_name;
+	unsigned int dev_sample_count;
+	mat_t *mat;
+	matvar_t *matvar;
+		
+	mat = Mat_Create(fileName, NULL);
+	if (!mat) {
+		fprintf(stderr, "Error creating MAT file %s: %s\n", fileName, strerror(errno));
+		return -1;
+	}
+	
+	d = device_find_by_name(ctx, deviceName);
+	if (d < 0)
+		return -1;
+
+	dev = iio_context_get_device(ctx, d);
+	dev_info = iio_device_get_data(dev);
+	nb_channels = iio_device_get_channels_count(dev);
+	dev_name = iio_device_get_name(dev) ?:
+		iio_device_get_id(dev);
+
+
+	dev_sample_count = dev_info->sample_count;
+	if (dev_info->channel_trigger_enabled)
+		dev_sample_count /= 2;
+
+	dims[0] = dev_sample_count;
+	for (i = 0; i < nb_channels; i++) {
+		struct iio_channel *chn = iio_device_get_channel(dev, i);
+		const char *ch_name = iio_channel_get_name(chn) ?:
+			iio_channel_get_id(chn);
+		struct extra_info *info = iio_channel_get_data(chn);
+		if (saveChannelMask[i] == 1)
+			continue;
+		sprintf(tmp, "%s_%s", dev_name, ch_name);
+		g_strdelimit(tmp, "-", '_');
+		if (normalizeData) {
+				matvar = Mat_VarCreate(tmp, MAT_C_SINGLE, MAT_T_SINGLE, 2, dims,
+			info->data_ref, 0);
+		} else {
+			const struct iio_data_format* format = iio_channel_get_data_format(chn);
+			gdouble *tmp_data;
+			double k;
+
+			tmp_data = g_new(gdouble, dev_sample_count);
+			if (format->is_signed)
+				k = format->bits - 1;
+			else
+				k = format->bits;
+			for (j = 0; j < dev_sample_count; j++) {
+				tmp_data[j] = (gdouble)info->data_ref[j] /
+							(pow(2.0, k));
+			}
+			matvar = Mat_VarCreate(tmp, MAT_C_DOUBLE, MAT_T_DOUBLE,
+					2, dims, tmp_data, 0);
+			g_free(tmp_data);
+		}
+
+		if (!matvar)
+			fprintf(stderr,
+				"error creating matvar on channel %s\n",
+				tmp);
+		else {
+			Mat_VarWrite(mat, matvar, 0);
+			Mat_VarFree(matvar);
+		}
+	}
+	Mat_Close(mat);
+	return 0;
 }
 
 void cb_saveas_response(GtkDialog *dialog, gint response_id, OscPlot *plot)
