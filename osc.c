@@ -205,6 +205,7 @@ static void gfunc_destroy_plot(gpointer data, gpointer user_data)
 	osc_plot_destroy(OSC_PLOT(plot));
 }
 
+// Gets called once for each channel (e.g. once for I and once for Q)
 static void update_plot(struct iio_buffer *buf)
 {
 	GList *node;
@@ -1150,6 +1151,11 @@ static bool device_is_oneshot(struct iio_device *dev)
 static gboolean capture_process(void *data)
 {
 	unsigned int i;
+	static int n = 0;
+	
+	int * save_channel_mask;
+	char file_name[32]; 
+	save_channel_mask = NULL;
 
 	if (stop_capture == TRUE)
 		goto capture_stop_check;
@@ -1243,7 +1249,7 @@ static gboolean capture_process(void *data)
 				struct iio_channel *ch = iio_device_get_channel(dev, i);
 				struct extra_info *info = iio_channel_get_data(ch);
 				memcpy(dev_info->channels_data_copy[i], info->data_ref,
-					sample_count * sizeof(gfloat));
+					sample_count * sizeof(gfloat));	
 			}
 			dev_info->channels_data_copy = NULL;
 			G_UNLOCK(buffer_full);
@@ -1256,7 +1262,20 @@ static gboolean capture_process(void *data)
 
 		if (!dev_info->channel_trigger_enabled || offset)
 			update_plot(dev_info->buffer);
+			
+		save_channel_mask = malloc(sizeof(int) * nb_channels);
+		for(i = 0; i < nb_channels; i++)
+		{
+			save_channel_mask[i] = 0;
+		}
 	}
+	
+	// Autosave data to .mat
+	// TODO: This could use GUI controls to enable, filename, etc.
+    snprintf(file_name, sizeof(char) * 32, "/tmp/iio_osc_%i.mat", n);
+    n++;
+	printf("Saving to mat file: %s\n",file_name);
+	SaveMatFile(ctx, file_name, "cf-ad9361-lpc", save_channel_mask, 0);
 
 	update_plot(NULL);
 
